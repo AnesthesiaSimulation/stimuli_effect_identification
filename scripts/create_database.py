@@ -130,6 +130,7 @@ for caseid, Patient_df in cases.groupby('caseid'):
     map_base = Patient_df['NI_MAP'].iloc[:istart+10].median()
     sv_base = (Patient_df['NI_SAP'].iloc[:istart+10] - Patient_df['NI_DAP'].iloc[:istart+10]).median() * 1.5
     hr_base = Patient_df['HR'].iloc[:istart+10].median()
+    bis_base = Patient_df['BIS'].iloc[:istart].median()
 
     if np.isnan(map_base) or np.isnan(sv_base) or np.isnan(hr_base):
         print(f"No value before induction for case {caseid}")
@@ -209,18 +210,21 @@ for caseid, Patient_df in cases.groupby('caseid'):
     Patient_df.insert(len(Patient_df.columns), "intubation_time", intubation_time)
     approach = case_data['approach'].iloc[0]
     Patient_df.insert(len(Patient_df.columns), "approach", approach)
+    Patient_df.insert(len(Patient_df.columns), "bis_base", bis_base)
 
     # Use the Python Anesthesia Simulator (PAS) to simulate the pharmacokinetics of propofol and remifentanil
     model = "Eleveld"  # Eleveld model
     Patient_simu = pas.Patient(
         [age, height, weight, sex],
-        model_propo=model,
-        model_remi=model,
+        model_propo=model,  # "Schnider",
+        model_remi=model,  # "Minto",
         model_bis='Fuentes',
         map_base=map_base,
         hr_base=hr_base,
         co_base=hr_base*sv_base / 1000,
     )
+    Patient_simu.bis_pd.E0 = bis_base
+
     # Patient_simu.hemo_pd.ltde_sv = 0
     # Patient_simu.hemo_pd.sv_base = sv_base
 
