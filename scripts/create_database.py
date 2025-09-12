@@ -211,6 +211,9 @@ for caseid, Patient_df in cases.groupby('caseid'):
     approach = case_data['approach'].iloc[0]
     Patient_df.insert(len(Patient_df.columns), "approach", approach)
     Patient_df.insert(len(Patient_df.columns), "bis_base", bis_base)
+    Patient_df.insert(len(Patient_df.columns), "hr_base", hr_base)
+    Patient_df.insert(len(Patient_df.columns), "map_base", map_base)
+    Patient_df.insert(len(Patient_df.columns), "sv_base", sv_base)
 
     # Use the Python Anesthesia Simulator (PAS) to simulate the pharmacokinetics of propofol and remifentanil
     model = "Eleveld"  # Eleveld model
@@ -223,6 +226,7 @@ for caseid, Patient_df in cases.groupby('caseid'):
         hr_base=hr_base,
         co_base=hr_base*sv_base / 1000,
     )
+
     Patient_simu.bis_pd.E0 = bis_base
 
     # Patient_simu.hemo_pd.ltde_sv = 0
@@ -275,5 +279,5 @@ for caseid, Patient_df in cases.groupby('caseid'):
 print(f"Number of caseid: {Full_data['caseid'].nunique()}")
 print(f" data columns: {Full_data.columns}")
 # Save Patients DataFrame
-Full_data.drop(columns=['index', 'NI_MAP', 'NI_DAP', 'NI_SAP'], inplace=True)
+Full_data.drop(columns=['index',], inplace=True)  # 'NI_MAP', 'NI_DAP', 'NI_SAP'
 Full_data.to_csv("./data/database.csv")

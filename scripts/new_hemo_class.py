@@ -205,7 +205,7 @@ class NewHemoModel:
             self.hr_base,
             self.sv_base * self.ltde_sv,
             self.hr_base * self.ltde_hr,
-        ])
+        ] + 5*[0])
 
         self.x_effect = np.array([
             self.tpr_base,
@@ -213,7 +213,7 @@ class NewHemoModel:
             self.hr_base,
             self.sv_base * self.ltde_sv,
             self.hr_base * self.ltde_hr,
-        ])
+        ] + 5*[0])
         self.flag_nore_used = False
         self.flag_blood_loss = False
 
@@ -225,27 +225,15 @@ class NewHemoModel:
         self.previous_cp_remi = 0
 
         # disturbance filter
-        gain_dist_hr = .2
-        tau_dist_hr = 1
-        dist_hr_filer = TransferFunction([gain_dist_hr], [tau_dist_hr, 1])
-        self.dist_hr_filer = dist_hr_filer.to_discrete(self.ts, method='bilinear')
+        self.dist_tpr_tau = 1
+        self.dist_tpr_k = 0
+        self.dist_sv_tau = 1
+        self.dist_sv_k = 0
+        self.dist_hr_tau = 1
+        self.dist_hr_k = 0
 
-        gain_dist_sv = 0
-        tau_dist_sv = 60*1
-        dist_sv_filer = TransferFunction([gain_dist_sv], [tau_dist_sv, 1])
-        self.dist_sv_filer = dist_sv_filer.to_discrete(self.ts, method='bilinear')
-
-        gain_dist_tpr = 0
-        tau_dist_tpr = 30
-        dist_tpr_filer = TransferFunction([gain_dist_tpr], [tau_dist_tpr, 1])
-        self.dist_tpr_filer = dist_tpr_filer.to_discrete(self.ts, method='bilinear')
-
-        dist_input = np.zeros(10000)
-        dist_input[5*60//self.ts:6*60//self.ts] = 1  # step disturbance after 5 seconds
-        _, self.hr_dist = dlsim(self.dist_hr_filer, u=dist_input)
-        dist_input[5*60//self.ts:] = 1  # step disturbance after 5 seconds
-        _, self.sv_dist = dlsim(self.dist_sv_filer, u=dist_input)
-        _, self.tpr_dist = dlsim(self.dist_tpr_filer, u=dist_input)
+        self.dist_input = np.zeros(10000)
+        self.dist_input[5*60//self.ts:6*60//self.ts] = 1  # step disturbance after 5 seconds
         self.time_id = 0
 
     def continuous_dynamic(
@@ -275,9 +263,7 @@ class NewHemoModel:
         cp_remi = u[1]
         map_wanted = u[2]
         sv_wanted = u[3]
-        dist_tpr = u[4]
-        dist_sv = u[5]
-        dist_hr = u[6]
+        dist_stim = u[4]
 
         eff_propo_tpr = (self.emax_propo_tpr + self.int_tpr * fsig(cp_remi, self.c50_remi_tpr, 1)) * \
             fsig(cp_propo, self.c50_propo_tpr, self.gamma_propo_tpr)
@@ -287,11 +273,12 @@ class NewHemoModel:
         eff_remi_tpr = self.emax_remi_tpr * fsig(cp_remi, self.c50_remi_tpr, 1)
 
         # compute apparent values
-        dsv = x[1] + x[3]
-        dhr = x[2] + x[4]
+        dtpr = x[0] + x[5]
+        dsv = x[1] + x[3] + x[7]
+        dhr = x[2] + x[4] + x[9]
 
         a_sv = dsv * (1 - self.hr_sv * np.log(dhr / self.abase_hr))
-        a_map = a_sv * dhr * x[0]
+        a_map = a_sv * dhr * dtpr
 
         rmap = a_map / self.base_map
 
@@ -314,11 +301,14 @@ class NewHemoModel:
             ltde_hr_dot = 0
 
         # dist_effect
-        tpr_dot += dist_tpr
-        sv_dot_star += dist_sv
-        hr_dot_star += dist_hr
+        dist_tpr_dot = x[6]
+        dist_tpr_dot_2 = 1/self.dist_tpr_tau*(self.dist_tpr_k*dist_stim - x[6])
+        dist_sv_dot = x[8]
+        dist_sv_dot_2 = 1/self.dist_sv_tau*(self.dist_sv_k*dist_stim - x[8])
+        dist_hr_dot = 1/self.dist_hr_tau*(self.dist_hr_k*dist_stim - x[9])
+        dist_dot = [dist_tpr_dot, dist_tpr_dot_2, dist_sv_dot, dist_sv_dot_2, dist_hr_dot]
 
-        return np.array([tpr_dot, sv_dot_star, hr_dot_star, ltde_sv_dot, ltde_hr_dot])
+        return np.array([tpr_dot, sv_dot_star, hr_dot_star, ltde_sv_dot, ltde_hr_dot]+dist_dot)
 
     def continuous_dynamic_sys(self, t, x, u):
         """ Same as continuous_dynamic but with time as first arguments (for scipy simulation)."""
@@ -339,9 +329,9 @@ class NewHemoModel:
             heart rate (beat / min), mean arterial pressure (mmHg),
             cardiac output (L/min)
         """
-        tpr = x[0]
-        sv = x[1] + x[3]
-        hr = x[2] + x[4]
+        tpr = x[0] + x[5]
+        sv = x[1] + x[3] + x[7]
+        hr = x[2] + x[4] + x[9]
         sv = sv * (1 - self.hr_sv * np.log(hr / self.abase_hr))
         map = tpr * sv * hr
         co = hr * sv / 1000  # fro mL/min to L/min
@@ -381,12 +371,10 @@ class NewHemoModel:
             blood volume as a fraction of init volume, 1 mean no loss, 0 mean 100% loss, default is 1.
         """
         # simulate disturbance
-        dist_hr = self.hr_dist[self.time_id][0]
-        dist_sv = self.sv_dist[self.time_id][0]
-        dist_tpr = self.tpr_dist[self.time_id][0]
+        dist = self.dist_input[self.time_id]
         self.time_id += 1
-        if self.time_id >= len(self.hr_dist):
-            self.time_id = len(self.hr_dist) - 1
+        if self.time_id >= len(self.dist_input):
+            self.time_id = len(self.dist_input) - 1
 
         c_propo_sim = (self.previous_cp_propo + cp_propo) / 2
         c_remi_sim = (self.previous_cp_remi + cp_remi) / 2
@@ -396,7 +384,7 @@ class NewHemoModel:
             t_span=np.array([0, self.ts]),
             t_eval=np.array([0, self.ts]),
             y0=self.x,
-            args=([c_propo_sim, c_remi_sim, 0, 0, dist_tpr, dist_sv, dist_hr],),
+            args=([c_propo_sim, c_remi_sim, 0, 0, dist],),
         )
         self.x = results.y[:, -1]
 
@@ -412,7 +400,7 @@ class NewHemoModel:
                 self.continuous_dynamic_sys,
                 t_span=np.array([0, self.ts]),
                 y0=self.x_effect,
-                args=([c_propo_sim, c_remi_sim, map_wanted, 0, dist_tpr, dist_sv, dist_hr],),
+                args=([c_propo_sim, c_remi_sim, map_wanted, 0, dist],),
             )
             self.x_effect = results_w_nore.y[:, -1]
         elif (v_ratio < 1 or self.flag_blood_loss) and not self.flag_nore_used:
@@ -426,7 +414,7 @@ class NewHemoModel:
                 self.continuous_dynamic_sys,
                 t_span=np.array([0, self.ts]),
                 y0=self.x_effect,
-                args=([c_propo_sim, c_remi_sim, 0, sv_wanted, dist_tpr, dist_sv, dist_hr],),
+                args=([c_propo_sim, c_remi_sim, 0, sv_wanted, dist],),
             )
             self.x_effect = results_blood_loss.y[:, -1]
         else:
