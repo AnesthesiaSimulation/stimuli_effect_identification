@@ -176,8 +176,10 @@ for caseid, Patient_df in cases.groupby('caseid'):
     Patient_df['DAP'] = Patient_df['DAP'].rolling(window=40, min_periods=1).mean()
     Patient_df.insert(len(Patient_df.columns), 'SV', (Patient_df['SAP'] - Patient_df['DAP'])*1.5)
 
-    Patient_df = Patient_df.ffill()
-    Patient_df = Patient_df.bfill()
+    columns_no_NI = [col for col in Patient_df.columns if 'NI' not in col]
+
+    Patient_df[columns_no_NI] = Patient_df[columns_no_NI].ffill()
+    Patient_df[columns_no_NI] = Patient_df[columns_no_NI].bfill()
 
     for col in cols:
         if col in min_val.keys():
@@ -190,8 +192,8 @@ for caseid, Patient_df in cases.groupby('caseid'):
         print(f"Case {caseid} has {missing_values.mean():2%} of missing values")
         continue
 
-    Patient_df = Patient_df.ffill()
-    Patient_df = Patient_df.bfill()
+    Patient_df[columns_no_NI] = Patient_df[columns_no_NI].ffill()
+    Patient_df[columns_no_NI] = Patient_df[columns_no_NI].bfill()
 
     # Add personnal information to the dataframe
     case_data = perso_data.query('caseid==@caseid')
@@ -249,6 +251,8 @@ for caseid, Patient_df in cases.groupby('caseid'):
 
     Patient_df["HR_sim"] = df_simu['HR']
     Patient_df["MAP_sim"] = df_simu['MAP']
+    Patient_df["DAP_sim"] = df_simu['DAP']
+    Patient_df["SAP_sim"] = df_simu['SAP']
     Patient_df["BIS_Eleveld"] = df_simu['BIS']
     Patient_df["SV_sim"] = df_simu['SV']
     Patient_df["Ce_prop"] = df_simu['x_propo_4']

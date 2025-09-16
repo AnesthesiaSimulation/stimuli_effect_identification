@@ -4,12 +4,15 @@ import python_anesthesia_simulator as pas
 from new_hemo_class import NewHemoModel
 import optuna
 import multiprocessing as mp
+from scipy.signal import TransferFunction, lfilter
+
+smooth_stimuli = TransferFunction([1], [50, 1])
 
 
 def one_simu(args):
     data_case, param_vec, sampling_time, model = args
     data_case = data_case.iloc[::sampling_time]
-    time_max = 30*60//sampling_time
+    time_max = int(data_case.opstart.iloc[0] - 5*60/sampling_time)
     data_case = data_case.query('Time <= @time_max')
     age = data_case.age.iloc[0]
     height = data_case.height.iloc[0]
@@ -20,10 +23,13 @@ def one_simu(args):
     map_base = data_case.map_base.iloc[0]
     sv_base = data_case.sv_base.iloc[0]
 
-    dist_input = np.zeros(time_max)
     intubation_time = data_case.intubation_time.iloc[0]
+    dist_input = np.zeros(time_max)
     dist_input[np.max([0, intubation_time - int(2*60/sampling_time)])
                       :intubation_time] = 1  # step disturbance after 5 seconds
+    discret = smooth_stimuli.to_discrete(sampling_time, method='bilinear')
+
+    dist_input = lfilter(discret.num, discret.den, dist_input)
 
     Patient_simu_dist = pas.Patient(
         [age, height, weight, sex],
@@ -42,22 +48,44 @@ def one_simu(args):
         sv_base=sv_base,
         map_base=map_base,
     )
-    Patient_simu_dist.hemo_pd.sl_remi_hr = param_vec[0]
-    Patient_simu_dist.hemo_pd.k_in_sv = param_vec[1]
-    Patient_simu_dist.hemo_pd.dist_sv_tau = param_vec[2]
+    Patient_simu_dist.hemo_pd.int_hr = param_vec[0]
+    Patient_simu_dist.hemo_pd.emax_propo_tpr = param_vec[1]
+    Patient_simu_dist.hemo_pd.fb = param_vec[2]
+    Patient_simu_dist.hemo_pd.dist_tpr_tau = 3
+    Patient_simu_dist.hemo_pd.dist_tpr_k = param_vec[3]
+    Patient_simu_dist.hemo_pd.dist_sv_tau = 2.7
+    Patient_simu_dist.hemo_pd.dist_sv_k = param_vec[4]
+    Patient_simu_dist.hemo_pd.dist_hr_tau = 25
+    Patient_simu_dist.hemo_pd.dist_hr_k = param_vec[5]
+    Patient_simu_dist.hemo_pd.dist_input = dist_input
 
     df_simu_dist = Patient_simu_dist.full_sim(
         data_case['Propofol']*20/3600,
         data_case['Remifentanil']*20/3600
     )
     loss = 0
-    for signal in ['HR', 'MAP', 'SV', 'TPR']:
-        error = (df_simu_dist[signal] - data_case[signal]) / df_simu_dist[signal]
+    # for signal in ['HR', 'SAP', 'DAP']:
+    #     error = (df_simu_dist[signal] - data_case[signal]) / df_simu_dist[signal]
+    #     if signal != 'TPR':
+    #         error = error[~(data_case[signal] < 10)]
+    #     else:
+    #         error = error[~(data_case[signal] < 0.0075)]
+    #     loss += np.linalg.norm(error, 2)
+    for signal in ['HR', 'SAP', 'DAP']:
+        # Relative absolute errors
+        abs_error = np.abs((df_simu_dist[signal] - data_case[signal]) / df_simu_dist[signal])
+        # Apply thresholds
         if signal != 'TPR':
-            error = error[~(data_case[signal] < 10)]
+            abs_error = abs_error[~(data_case[signal] < 10)]
         else:
-            error = error[~(data_case[signal] < 0.0075)]
-        loss += np.linalg.norm(error, 2)
+            abs_error = abs_error[~(data_case[signal] < 0.0075)]
+        # Median absolute error
+        med_abs_err = np.median(abs_error)
+        # Deviation score: mean absolute deviation from the median
+        deviation = np.mean(np.abs(abs_error - med_abs_err))
+        # Combine median error with deviation as regularizer
+        loss += med_abs_err + deviation
+
     return loss
 
 
@@ -86,8 +114,8 @@ def run_with_timeout(func, args, timeout):
 
 data = pd.read_csv('./data/database.csv')
 data['TPR'] = (data['MAP'] / (data['HR'] * data['SV'])).clip(0, 0.04)
-# caseid = data.caseid.unique()[0]
-data_cases = data  # .query('caseid == @caseid')
+caseid = data.caseid.unique()[:16]
+data_cases = data  # .query('caseid in @caseid')
 
 
 model = "Eleveld"
@@ -95,22 +123,23 @@ sampling_time = 1
 
 
 def optuna_obj(trial):
-    dist_tpr_tau = trial.suggest_float("tpr_tau", 0.1, 10, log=True)
-    dist_tpr_k = trial.suggest_float("tpr_k", 1e-5, 1e-4, log=False)
-    dist_sv_tau = trial.suggest_float("sv_tau", 0.1, 10, log=True)
+    sl_remi_hr = -trial.suggest_float("int_hr", 0.119/2, 0.119*2, log=True)
+    k_in_sv = -trial.suggest_float("emax_propo_tpr", 1e-3, 0.778*2, log=True)
+    fb = trial.suggest_float("fb", -0.661*2, -0.661/2, log=False)
+    dist_tpr_k = trial.suggest_float("tpr_k", 1e-6, 1e-4, log=False)
     dist_sv_k = trial.suggest_float("sv_k", 0.05, 1, log=False)
-    dist_hr_tau = trial.suggest_float("hr_tau", 1, 60, log=True)
     dist_hr_k = trial.suggest_float("hr_k", 1, 50, log=False)
-    dist_vec = [dist_tpr_tau,
-                dist_tpr_k,
-                dist_sv_tau,
-                dist_sv_k,
-                dist_hr_tau,
-                dist_hr_k]
+    param_vec = [sl_remi_hr,
+                 k_in_sv,
+                 fb,
+                 dist_tpr_k,
+                 dist_sv_k,
+                 dist_hr_k
+                 ]
 
     loss = 0  # np.sum([np.linalg.norm(vec, 1) for vec in [hr_vec, sv_vec, tpr_vec]]) * 100
     args_list = [
-        (data_case, dist_vec, sampling_time, model)
+        (data_case, param_vec, sampling_time, model)
         for caseid, data_case in data_cases.groupby('caseid')
     ]
 
@@ -121,17 +150,18 @@ def optuna_obj(trial):
     return loss
 
 
-study = optuna.create_study(direction='minimize', study_name='identif_v8',
+study = optuna.create_study(direction='minimize', study_name='identif_all_v4',
                             storage='sqlite:///./data/tuning.db', load_if_exists=True)
 study.enqueue_trial({
-    "tpr_tau": np.float64(0.7834387152523279),
-    "tpr_k": np.float64(3.756912845347241e-05),
-    "sv_tau": np.float64(2.7699152215508143),
-    "sv_k": np.float64(0.16028047674063062),
-    "hr_tau": np.float64(24.568943848896044),
-    "hr_k": np.float64(11.111759255124891)})
-study.optimize(optuna_obj, n_trials=100, show_progress_bar=True, )
+    "int_hr": 0.1,
+    "emax_propo_tpr": 6e-3,
+    "fb": -0.9,
+    "tpr_k": 02e-06,
+    "sv_k": 0.16,
+    "hr_k": 9.5,
+})
+study.optimize(optuna_obj, n_trials=200, show_progress_bar=True, )
 print(study.best_params)
 
 best_params = pd.DataFrame(study.best_params, index=[0])
-best_params.to_csv('data/best_params_dist.csv', index=False)
+best_params.to_csv('data/best_params_hr.csv', index=False)

@@ -3,9 +3,6 @@ from typing import Optional
 import numpy as np
 from scipy.integrate import solve_ivp
 import casadi as cas
-from matplotlib import pyplot as plt
-from matplotlib import cm
-from scipy.signal import dlsim, TransferFunction
 
 
 def fsig(x, c50, gam): return x**gam / (c50**gam + x**gam)  # quick definition of sigmoidal function
