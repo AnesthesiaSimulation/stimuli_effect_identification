@@ -3,6 +3,7 @@ from typing import Optional
 import numpy as np
 from scipy.integrate import solve_ivp
 import casadi as cas
+from scipy.signal import TransferFunction, lfilter
 
 
 def fsig(x, c50, gam): return x**gam / (c50**gam + x**gam)  # quick definition of sigmoidal function
@@ -202,7 +203,7 @@ class NewHemoModel:
             self.hr_base,
             self.sv_base * self.ltde_sv,
             self.hr_base * self.ltde_hr,
-        ] + 5*[0])
+        ])
 
         self.x_effect = np.array([
             self.tpr_base,
@@ -210,7 +211,7 @@ class NewHemoModel:
             self.hr_base,
             self.sv_base * self.ltde_sv,
             self.hr_base * self.ltde_hr,
-        ] + 5*[0])
+        ])
         self.flag_nore_used = False
         self.flag_blood_loss = False
 
@@ -221,17 +222,74 @@ class NewHemoModel:
         self.previous_cp_propo = 0
         self.previous_cp_remi = 0
 
-        # disturbance filter
-        self.dist_tpr_tau = 1
-        self.dist_tpr_k = 0
-        self.dist_sv_tau = 1
-        self.dist_sv_k = 0
-        self.dist_hr_tau = 1
-        self.dist_hr_k = 0
+        # intubation stimuli filter
+        self.smooth_factor = 50
+        self.dist_intub_tpr_tau = 1
+        self.dist_intub_tpr_k = 1e-6
+        self.dist_intub_sv_tau = 1
+        self.dist_intub_sv_k = 1e-4
+        self.dist_intub_hr_tau = 1
+        self.dist_intub_hr_k = 1e-4
 
-        self.dist_input = np.zeros(10000)
-        self.dist_input[5*60//self.ts:6*60//self.ts] = 1  # step disturbance after 5 seconds
+        # intubation stimuli filter
+        # self.smooth_factor = 50
+        self.dist_surg_tpr_tau = 1
+        self.dist_surg_tpr_k = 1e-6
+        self.dist_surg_sv_tau = 1
+        self.dist_surg_sv_k = 1e-4
+        self.dist_surg_hr_tau = 1
+        self.dist_surg_hr_k = 1e-4
+
+        # stimuli input
+        self.intub_input = np.zeros(10000)
+        self.intub_input[4*60//self.ts:6*60//self.ts] = 1  # step disturbance after 5 seconds
+        self.surg_input = np.zeros(10000)
+        self.surg_input[40*60//self.ts:] = 1  # step disturbance after 5 seconds
         self.time_id = 0
+
+        self.disturbance_dynamic()
+
+    def disturbance_dynamic(self):
+        """Apply the dynamic on the input disturbance signal.
+        """
+        smooth_filter = TransferFunction(
+            [1],
+            [self.smooth_factor, 1]
+        ).to_discrete(self.ts, method='bilinear')
+        tf_dist_tpr = TransferFunction(
+            [self.dist_intub_tpr_k],
+            [self.dist_intub_tpr_tau, 1, 0]
+        ).to_discrete(self.ts, method='bilinear')
+        tf_dist_sv = TransferFunction(
+            [self.dist_intub_sv_k],
+            [self.dist_intub_sv_tau, 1, 0]
+        ).to_discrete(self.ts, method='bilinear')
+        tf_dist_hr = TransferFunction(
+            [self.dist_intub_hr_k],
+            [self.dist_intub_hr_tau, 1]
+        ).to_discrete(self.ts, method='bilinear')
+
+        input_smooth = lfilter(smooth_filter.num, smooth_filter.den, self.intub_input)
+        self.dist_tpr = lfilter(tf_dist_tpr.num, tf_dist_tpr.den, input_smooth)
+        self.dist_sv = lfilter(tf_dist_sv.num, tf_dist_sv.den, input_smooth)
+        self.dist_hr = lfilter(tf_dist_hr.num, tf_dist_hr.den, input_smooth)
+
+        tf_dist_tpr = TransferFunction(
+            [self.dist_surg_tpr_k],
+            [self.dist_surg_tpr_tau**2, 2*self.dist_surg_tpr_tau, 1]
+        ).to_discrete(self.ts, method='bilinear')
+        tf_dist_sv = TransferFunction(
+            [self.dist_surg_sv_k],
+            [self.dist_surg_sv_tau**2, 2*self.dist_surg_sv_tau, 1]
+        ).to_discrete(self.ts, method='bilinear')
+        tf_dist_hr = TransferFunction(
+            [self.dist_surg_hr_k],
+            [self.dist_surg_hr_tau**2, 2*self.dist_surg_hr_tau, 1]
+        ).to_discrete(self.ts, method='bilinear')
+
+        self.dist_tpr += lfilter(tf_dist_tpr.num, tf_dist_tpr.den, self.surg_input)
+        self.dist_sv += lfilter(tf_dist_sv.num, tf_dist_sv.den, self.surg_input)
+        self.dist_hr += lfilter(tf_dist_hr.num, tf_dist_hr.den, self.surg_input)
 
     def continuous_dynamic(
             self,
@@ -260,7 +318,9 @@ class NewHemoModel:
         cp_remi = u[1]
         map_wanted = u[2]
         sv_wanted = u[3]
-        dist_stim = u[4]
+        tpr_stim = u[4]
+        sv_stim = u[5]
+        hr_stim = u[6]
 
         eff_propo_tpr = (self.emax_propo_tpr + self.int_tpr * fsig(cp_remi, self.c50_remi_tpr, 1)) * \
             fsig(cp_propo, self.c50_propo_tpr, self.gamma_propo_tpr)
@@ -270,9 +330,9 @@ class NewHemoModel:
         eff_remi_tpr = self.emax_remi_tpr * fsig(cp_remi, self.c50_remi_tpr, 1)
 
         # compute apparent values
-        dtpr = x[0] + x[5]
-        dsv = x[1] + x[3] + x[7]
-        dhr = x[2] + x[4] + x[9]
+        dtpr = x[0] + tpr_stim
+        dsv = x[1] + x[3] + sv_stim
+        dhr = x[2] + x[4] + hr_stim
 
         a_sv = dsv * (1 - self.hr_sv * np.log(dhr / self.abase_hr))
         a_map = a_sv * dhr * dtpr
@@ -297,21 +357,13 @@ class NewHemoModel:
             ltde_sv_dot = 0
             ltde_hr_dot = 0
 
-        # dist_effect
-        dist_tpr_dot = x[6]
-        dist_tpr_dot_2 = 1/self.dist_tpr_tau*(self.dist_tpr_k*dist_stim - x[6])
-        dist_sv_dot = x[8]
-        dist_sv_dot_2 = 1/self.dist_sv_tau*(self.dist_sv_k*dist_stim - x[8])
-        dist_hr_dot = 1/self.dist_hr_tau*(self.dist_hr_k*dist_stim - x[9])
-        dist_dot = [dist_tpr_dot, dist_tpr_dot_2, dist_sv_dot, dist_sv_dot_2, dist_hr_dot]
-
-        return np.array([tpr_dot, sv_dot_star, hr_dot_star, ltde_sv_dot, ltde_hr_dot]+dist_dot)
+        return np.array([tpr_dot, sv_dot_star, hr_dot_star, ltde_sv_dot, ltde_hr_dot])
 
     def continuous_dynamic_sys(self, t, x, u):
         """ Same as continuous_dynamic but with time as first arguments (for scipy simulation)."""
         return self.continuous_dynamic(x, u)
 
-    def output_function(self, x: np.ndarray) -> np.ndarray:
+    def output_function(self, x: np.ndarray, dist: np.ndarray = np.zeros(3)) -> np.ndarray:
         """_summary_
 
         Parameters
@@ -326,9 +378,9 @@ class NewHemoModel:
             heart rate (beat / min), mean arterial pressure (mmHg),
             cardiac output (L/min)
         """
-        tpr = x[0] + x[5]
-        sv = x[1] + x[3] + x[7]
-        hr = x[2] + x[4] + x[9]
+        tpr = x[0] + dist[0]
+        sv = x[1] + x[3] + dist[1]
+        hr = x[2] + x[4] + dist[2]
         sv = sv * (1 - self.hr_sv * np.log(hr / self.abase_hr))
         map = tpr * sv * hr
         co = hr * sv / 1000  # fro mL/min to L/min
@@ -368,10 +420,13 @@ class NewHemoModel:
             blood volume as a fraction of init volume, 1 mean no loss, 0 mean 100% loss, default is 1.
         """
         # simulate disturbance
-        dist = self.dist_input[self.time_id]
+        dist_tpr = self.dist_tpr[self.time_id]
+        dist_sv = self.dist_sv[self.time_id]
+        dist_hr = self.dist_hr[self.time_id]
+        dist = [dist_tpr, dist_sv, dist_hr]
         self.time_id += 1
-        if self.time_id >= len(self.dist_input):
-            self.time_id = len(self.dist_input) - 1
+        if self.time_id >= len(self.intub_input):
+            self.time_id = len(self.intub_input) - 1
 
         c_propo_sim = (self.previous_cp_propo + cp_propo) / 2
         c_remi_sim = (self.previous_cp_remi + cp_remi) / 2
@@ -381,7 +436,7 @@ class NewHemoModel:
             t_span=np.array([0, self.ts]),
             t_eval=np.array([0, self.ts]),
             y0=self.x,
-            args=([c_propo_sim, c_remi_sim, 0, 0, dist],),
+            args=([c_propo_sim, c_remi_sim, 0, 0]+dist,),
         )
         self.x = results.y[:, -1]
 
@@ -390,14 +445,14 @@ class NewHemoModel:
                 self.flag_nore_used = True
             if v_ratio != 1:
                 print("Warning: norepinephrine effect is not computed with blood loss")
-            map_no_nore = self.output_function(self.x)[3]
+            map_no_nore = self.output_function(self.x, dist)[3]
             map_wanted = map_no_nore + self.nore_map_effect(cp_nore)
             # run computation for model with nore effect
             results_w_nore = solve_ivp(
                 self.continuous_dynamic_sys,
                 t_span=np.array([0, self.ts]),
                 y0=self.x_effect,
-                args=([c_propo_sim, c_remi_sim, map_wanted, 0, dist],),
+                args=([c_propo_sim, c_remi_sim, map_wanted, 0]+dist,),
             )
             self.x_effect = results_w_nore.y[:, -1]
         elif (v_ratio < 1 or self.flag_blood_loss) and not self.flag_nore_used:
@@ -405,13 +460,13 @@ class NewHemoModel:
                 self.flag_blood_loss = True
             if cp_nore > 0:
                 print("Warning: norepinephrine effect is not computed with blood loss")
-            sv_no_blood_loss = self.output_function(self.x)[1]
+            sv_no_blood_loss = self.output_function(self.x, dist)[1]
             sv_wanted = sv_no_blood_loss * v_ratio
             results_blood_loss = solve_ivp(
                 self.continuous_dynamic_sys,
                 t_span=np.array([0, self.ts]),
                 y0=self.x_effect,
-                args=([c_propo_sim, c_remi_sim, 0, sv_wanted, dist],),
+                args=([c_propo_sim, c_remi_sim, 0, sv_wanted]+dist,),
             )
             self.x_effect = results_blood_loss.y[:, -1]
         else:
@@ -419,7 +474,7 @@ class NewHemoModel:
 
         self.previous_cp_propo = cp_propo
         self.previous_cp_remi = cp_remi
-        output = self.output_function(self.x_effect)
+        output = self.output_function(self.x_effect, dist)
         return output  # tpr, sv, hr, map, co
 
     def full_sim(self,

@@ -25,7 +25,8 @@ def one_simu(args):
 
     intubation_time = data_case.intubation_time.iloc[0]
     dist_input = np.zeros(time_max)
-    dist_input[np.max([0, intubation_time - int(2*60/sampling_time)]):intubation_time] = 1  # step disturbance after 5 seconds
+    dist_input[np.max([0, intubation_time - int(2*60/sampling_time)])
+                      :intubation_time] = 1  # step disturbance after 5 seconds
     discret = smooth_stimuli.to_discrete(sampling_time, method='bilinear')
 
     dist_input = lfilter(discret.num, discret.den, dist_input)
@@ -63,31 +64,31 @@ def one_simu(args):
         data_case['Remifentanil']*20/3600
     )
     loss = 0
-    for signal in ['HR', 'TPR', 'SV', 'MAP']:
-        error = (df_simu_dist[signal] - data_case[signal]) / df_simu_dist[signal]
-        if signal != 'TPR':
-            error = error[~(data_case[signal] < 10)]
-        else:
-            error = error[~(data_case[signal] < 0.0075)]
-        loss += np.linalg.norm(error, 2)
-    # for signal in ['HR', 'TPR', 'SV', 'MAP']: #'SAP', 'DAP']:
-    #     abs_error = np.abs((df_simu_dist[signal] - data_case[signal]))
-
+    # for signal in ['HR', 'TPR', 'SV', 'MAP']:
+    #     error = (df_simu_dist[signal] - data_case[signal]) / df_simu_dist[signal]
     #     if signal != 'TPR':
-    #         abs_error = abs_error[~(data_case[signal] < 10)]
-    #         signal_values = data_case[signal][~(data_case[signal] < 10)]
+    #         error = error[~(data_case[signal] < 10)]
     #     else:
-    #         abs_error = abs_error[~(data_case[signal] < 0.0075)]
-    #         signal_values = data_case[signal][~(data_case[signal] < 0.0075)]
+    #         error = error[~(data_case[signal] < 0.0075)]
+    #     loss += np.linalg.norm(error, 2)
+    for signal in ['HR', 'SAP', 'DAP']:
+        abs_error = np.abs((df_simu_dist[signal] - data_case[signal]))
 
-    #     med_abs_err = np.median(abs_error)
+        if signal != 'TPR':
+            abs_error = abs_error[~(data_case[signal] < 10)]
+            signal_values = data_case[signal][~(data_case[signal] < 10)]
+        else:
+            abs_error = abs_error[~(data_case[signal] < 0.0075)]
+            signal_values = data_case[signal][~(data_case[signal] < 0.0075)]
 
-    #     # median absolute deviation of the signal itself
-    #     med_signal = np.median(signal_values)
-    #     med_dev_signal = np.median(np.abs(signal_values - med_signal))
+        med_abs_err = np.median(abs_error)
 
-    #     # metric: median absolute error divided by median deviation of the signal
-    #     loss += med_abs_err / med_dev_signal
+        # median absolute deviation of the signal itself
+        med_signal = np.median(signal_values)
+        med_dev_signal = np.median(np.abs(signal_values - med_signal))
+
+        # metric: median absolute error divided by median deviation of the signal
+        loss += med_abs_err / med_dev_signal
 
     return loss
 
