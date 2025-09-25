@@ -253,7 +253,7 @@ for caseid, Patient_df in cases.groupby('caseid'):
     Patient_df["MAP_sim"] = df_simu['MAP']
     Patient_df["DAP_sim"] = df_simu['DAP']
     Patient_df["SAP_sim"] = df_simu['SAP']
-    Patient_df["BIS_Eleveld"] = df_simu['BIS']
+    Patient_df["BIS_sim"] = df_simu['BIS']
     Patient_df["SV_sim"] = df_simu['SV']
     Patient_df["Ce_prop"] = df_simu['x_propo_4']
     Patient_df["Ce_remi"] = df_simu['x_remi_4']

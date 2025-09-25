@@ -33,7 +33,7 @@ def one_simu(args):
         model_bis='Fuentes',
         ts=sampling_time,
     )
-    Patient_simu_dist.bis_pd.E0 = bis_base
+    # Patient_simu_dist.bis_pd.E0 = bis_base
 
     Patient_simu_dist.hemo_pd = NewHemoModel(
         age=Patient_simu_dist.age,
@@ -56,11 +56,11 @@ def one_simu(args):
     Patient_simu_dist.hemo_pd.intub_input = dist_input
 
     Patient_simu_dist.hemo_pd.dist_surg_tpr_tau = 5*60
-    Patient_simu_dist.hemo_pd.dist_surg_tpr_k = 0.001
+    Patient_simu_dist.hemo_pd.dist_surg_tpr_k = 0.0008
     Patient_simu_dist.hemo_pd.dist_surg_sv_tau = 3*60
-    Patient_simu_dist.hemo_pd.dist_surg_sv_k = 17
+    Patient_simu_dist.hemo_pd.dist_surg_sv_k = 14.052
     Patient_simu_dist.hemo_pd.dist_surg_hr_tau = 8*60
-    Patient_simu_dist.hemo_pd.dist_surg_hr_k = 12
+    Patient_simu_dist.hemo_pd.dist_surg_hr_k = 9.4613
     Patient_simu_dist.hemo_pd.surg_input = surg_input
 
     Patient_simu_dist.hemo_pd.disturbance_dynamic()
