@@ -229,8 +229,6 @@ for caseid, Patient_df in cases.groupby('caseid'):
         co_base=hr_base*sv_base / 1000,
     )
 
-    Patient_simu.bis_pd.E0 = bis_base
-
     # Patient_simu.hemo_pd.ltde_sv = 0
     # Patient_simu.hemo_pd.sv_base = sv_base
 

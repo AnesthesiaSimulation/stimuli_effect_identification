@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import python_anesthesia_simulator as pas
 from matplotlib import pyplot as plt
-from scipy.interpolate import make_smoothing_spline
 
 data = pd.read_csv('data/database.csv')
 data['Time_aligned'] = data['Time'] - data['intubation_time']
@@ -17,10 +16,11 @@ for caseid, data_case in data.groupby('caseid'):
     bis_case = np.clip(bis_case, 0, 100)
 
     bis += list(bis_case)
+data = data.drop(columns=['BIS_sim'])
 data.insert(0, "BIS_sim", bis)
 
 
-Time = [i*60 for i in range(-5, 30)]
+Time = [i*60 for i in range(-7, 30)]
 bis_delta = []
 for t in Time:
     median_diff = data.query('Time_aligned >= @t and Time_aligned < @t + 60')['BIS'].median() - \
@@ -32,15 +32,17 @@ data.groupby('Time_aligned')['BIS_sim'].median().plot(label='BIS simulated', col
 plt.xlim(-5*60, 30*60)
 plt.show()
 
-tnew = np.linspace(-5, 30, 100)*60
+tnew = np.linspace(-6, 30, 100)*60
 
-plt.plot(Time, bis_delta)
-for deg in [2, 3, 4, 5]:
+plt.plot(Time, bis_delta, label='Median(BIS - BIS_sim)')
+for deg in [4]:
     p = np.polyfit(Time, bis_delta, deg)
-    plt.plot(tnew, np.polyval(p, tnew), '-.', label=fr'deg={deg}')
+    plt.plot(tnew, np.polyval(p, tnew), '-.', label='polinomial approximation')
     print(p)
 plt.xlabel('Time after intubation (min)')
-plt.ylabel('Median BIS - BIS_sim')
-plt.title('BIS difference between measured and simulated')
+plt.ylabel('Median(BIS - BIS_sim)')
+# plt.title('BIS difference between measured and simulated')
+
 plt.legend()
+plt.savefig('output/bis_diff.png', dpi=300)
 plt.show()

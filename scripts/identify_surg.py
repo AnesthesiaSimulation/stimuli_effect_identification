@@ -22,7 +22,8 @@ def one_simu(args):
 
     intubation_time = data_case.intubation_time.iloc[0]
     dist_input = np.zeros(10000)
-    dist_input[np.max([0, intubation_time - int(2*60/sampling_time)]):intubation_time] = 1  # step disturbance after 5 seconds
+    dist_input[np.max([0, intubation_time - int(2*60/sampling_time)])
+                      :intubation_time] = 1  # step disturbance after 5 seconds
     surg_input = np.zeros(10000)
     surg_input[int(data_case.opstart.iloc[0]/sampling_time):] = 1
 
@@ -43,8 +44,8 @@ def one_simu(args):
         sv_base=sv_base,
         map_base=map_base,
     )
-    param = {'int_hr': 0.0849954176401289, 'emax_propo_tpr': 0.023733132184657085, 'fb': -0.3672899549950461,
-             'tpr_k': 1.1256297341273485e-05, 'sv_k': 0.18035095427137257, 'hr_k': 8.677453095961003}
+    param = {'int_hr': 0.09690889513781517, 'emax_propo_tpr': 0.030045146063674148, 'fb': -0.5009912989433524,
+             'tpr_k': 8.854740714663977e-06, 'sv_k': 0.17603064373166186, 'hr_k': 11.936291973917072}
 
     Patient_simu_dist.hemo_pd.int_hr = -param['int_hr']
     Patient_simu_dist.hemo_pd.emax_propo_tpr = -param['emax_propo_tpr']
@@ -150,7 +151,7 @@ def optuna_obj(trial):
     return loss
 
 
-study = optuna.create_study(direction='minimize', study_name='identif_surg_v1',
+study = optuna.create_study(direction='minimize', study_name='identif_surg_v3',
                             storage='sqlite:///./data/tuning.db', load_if_exists=True)
 study.enqueue_trial({
     "tpr_k": 1e-3,
@@ -158,7 +159,6 @@ study.enqueue_trial({
     "hr_k": 12,
 })
 study.optimize(optuna_obj, n_trials=200, show_progress_bar=True, )
-print(study.best_params)
 
 best_params = pd.DataFrame(study.best_params, index=[0])
 best_params.to_csv('data/best_params_surg.csv', index=False)

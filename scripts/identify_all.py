@@ -4,9 +4,6 @@ import python_anesthesia_simulator as pas
 from new_hemo_class import NewHemoModel
 import optuna
 import multiprocessing as mp
-from scipy.signal import TransferFunction, lfilter
-
-smooth_stimuli = TransferFunction([1], [50, 1])
 
 
 def one_simu(args):
@@ -18,27 +15,24 @@ def one_simu(args):
     height = data_case.height.iloc[0]
     weight = data_case.weight.iloc[0]
     sex = data_case.sex.iloc[0]
-    bis_base = data_case.bis_base.iloc[0]
     hr_base = data_case.hr_base.iloc[0]
     map_base = data_case.map_base.iloc[0]
     sv_base = data_case.sv_base.iloc[0]
 
     intubation_time = data_case.intubation_time.iloc[0]
-    dist_input = np.zeros(time_max)
-    dist_input[np.max([0, intubation_time - int(2*60/sampling_time)])
-                      :intubation_time] = 1  # step disturbance after 5 seconds
-    discret = smooth_stimuli.to_discrete(sampling_time, method='bilinear')
-
-    dist_input = lfilter(discret.num, discret.den, dist_input)
+    dist_input = np.zeros(10000)
+    dist_input[np.max([0, intubation_time - int(2*60/sampling_time)])               :intubation_time] = 1  # step disturbance after 5 seconds
+    surg_input = np.zeros(10000)
+    surg_input[int(data_case.opstart.iloc[0]/sampling_time):] = 1
 
     Patient_simu_dist = pas.Patient(
         [age, height, weight, sex],
-        model_propo=model,  # \"Schnider\",
-        model_remi=model,  # \"Minto\",
+        model_propo=model,
+        model_remi=model,
         model_bis='Fuentes',
         ts=sampling_time,
     )
-    Patient_simu_dist.bis_pd.E0 = bis_base
+    # Patient_simu_dist.bis_pd.E0 = bis_base
 
     Patient_simu_dist.hemo_pd = NewHemoModel(
         age=Patient_simu_dist.age,
@@ -48,23 +42,43 @@ def one_simu(args):
         sv_base=sv_base,
         map_base=map_base,
     )
-    Patient_simu_dist.hemo_pd.int_hr = param_vec[0]
-    Patient_simu_dist.hemo_pd.emax_propo_tpr = param_vec[1]
+    # param = {
+    #     'int_hr': 0.1,
+    #     'emax_propo_tpr': 0.006,
+    #     'fb': -0.9,
+    #     'tpr_k': 1e-05,
+    #     'sv_k': 0.16,
+    #     'hr_k': 9.5}
+
+    # param_vec = [param[key] for key in param.keys()]
+
+    Patient_simu_dist.hemo_pd.int_hr = -param_vec[0]
+    Patient_simu_dist.hemo_pd.emax_propo_tpr = -param_vec[1]
     Patient_simu_dist.hemo_pd.fb = param_vec[2]
-    Patient_simu_dist.hemo_pd.dist_tpr_tau = 3
-    Patient_simu_dist.hemo_pd.dist_tpr_k = param_vec[3]
-    Patient_simu_dist.hemo_pd.dist_sv_tau = 2.7
-    Patient_simu_dist.hemo_pd.dist_sv_k = param_vec[4]
-    Patient_simu_dist.hemo_pd.dist_hr_tau = 25
-    Patient_simu_dist.hemo_pd.dist_hr_k = param_vec[5]
-    Patient_simu_dist.hemo_pd.dist_input = dist_input
+    Patient_simu_dist.hemo_pd.dist_intub_tpr_tau = 3
+    Patient_simu_dist.hemo_pd.dist_intub_tpr_k = param_vec[3]
+    Patient_simu_dist.hemo_pd.dist_intub_sv_tau = 2.7
+    Patient_simu_dist.hemo_pd.dist_intub_sv_k = param_vec[4]
+    Patient_simu_dist.hemo_pd.dist_intub_hr_tau = 40
+    Patient_simu_dist.hemo_pd.dist_intub_hr_k = param_vec[5]
+    Patient_simu_dist.hemo_pd.intub_input = dist_input
+
+    Patient_simu_dist.hemo_pd.dist_surg_tpr_tau = 5*60
+    Patient_simu_dist.hemo_pd.dist_surg_tpr_k = 0.0008*1e-3
+    Patient_simu_dist.hemo_pd.dist_surg_sv_tau = 3*60
+    Patient_simu_dist.hemo_pd.dist_surg_sv_k = 14.052*1e-3
+    Patient_simu_dist.hemo_pd.dist_surg_hr_tau = 8*60
+    Patient_simu_dist.hemo_pd.dist_surg_hr_k = 9.4613*1e-3
+    Patient_simu_dist.hemo_pd.surg_input = surg_input
+
+    Patient_simu_dist.hemo_pd.disturbance_dynamic()
 
     df_simu_dist = Patient_simu_dist.full_sim(
         data_case['Propofol']*20/3600,
         data_case['Remifentanil']*20/3600
     )
     loss = 0
-    # for signal in ['HR', 'TPR', 'SV', 'MAP']:
+    # for signal in ['HR', 'SAP', 'DAP']:
     #     error = (df_simu_dist[signal] - data_case[signal]) / df_simu_dist[signal]
     #     if signal != 'TPR':
     #         error = error[~(data_case[signal] < 10)]
@@ -89,7 +103,6 @@ def one_simu(args):
 
         # metric: median absolute error divided by median deviation of the signal
         loss += med_abs_err / med_dev_signal
-
     return loss
 
 
@@ -118,23 +131,23 @@ def run_with_timeout(func, args, timeout):
 
 data = pd.read_csv('./data/database.csv')
 data['TPR'] = (data['MAP'] / (data['HR'] * data['SV'])).clip(0, 0.04)
-caseid = data.caseid.unique()[:16]
+# caseid = data.caseid.unique()[:16]
 data_cases = data  # .query('caseid in @caseid')
 
-
+print(data_cases.caseid.nunique())
 model = "Eleveld"
 sampling_time = 1
 
 
 def optuna_obj(trial):
-    sl_remi_hr = -trial.suggest_float("int_hr", 0.119/2, 0.119*2, log=True)
-    k_in_sv = -trial.suggest_float("emax_propo_tpr", 1e-3, 0.778*2, log=True)
+    int_hr = trial.suggest_float("int_hr", 0.119/2, 0.119*2, log=True)
+    emax_propo_tpr = trial.suggest_float("emax_propo_tpr", 1e-3, 0.778*2, log=True)
     fb = trial.suggest_float("fb", -0.661*2, -0.661/2, log=False)
     dist_tpr_k = trial.suggest_float("tpr_k", 1e-6, 1e-4, log=False)
     dist_sv_k = trial.suggest_float("sv_k", 0.05, 1, log=False)
     dist_hr_k = trial.suggest_float("hr_k", 1, 50, log=False)
-    param_vec = [sl_remi_hr,
-                 k_in_sv,
+    param_vec = [int_hr,
+                 emax_propo_tpr,
                  fb,
                  dist_tpr_k,
                  dist_sv_k,
@@ -149,23 +162,22 @@ def optuna_obj(trial):
 
     with mp.Pool(processes=mp.cpu_count()) as pool:
         results = pool.map(one_simu, args_list)
-
     loss = sum(results)/3/data_cases['caseid'].nunique()
     return loss
 
 
-study = optuna.create_study(direction='minimize', study_name='identif_all_v6',
+study = optuna.create_study(direction='minimize', study_name='identif_all_v27',
                             storage='sqlite:///./data/tuning.db', load_if_exists=True)
 study.enqueue_trial({
-    "int_hr": 0.1,
-    "emax_propo_tpr": 6e-3,
-    "fb": -0.9,
-    "tpr_k": 02e-06,
-    "sv_k": 0.16,
-    "hr_k": 9.5,
+    'int_hr': 0.1,
+    'emax_propo_tpr': 0.006,
+    'fb': -0.9,
+    'tpr_k': 1e-05,
+    'sv_k': 0.16,
+    'hr_k': 9.5
 })
-study.optimize(optuna_obj, n_trials=200, show_progress_bar=True, )
+study.optimize(optuna_obj, n_trials=87, show_progress_bar=True, )
 print(study.best_params)
 
 best_params = pd.DataFrame(study.best_params, index=[0])
-best_params.to_csv('data/best_params_hr.csv', index=False)
+best_params.to_csv('data/best_params_step_1.csv', index=False)

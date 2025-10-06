@@ -19,6 +19,12 @@ perso_data = perso_data[perso_data["caseend"] >= 90*60]
 
 print(f"Number of cases with at least 1 hours and 30 minutes of data: {len(perso_data)}")
 
+perso_data = perso_data[perso_data["intraop_ebl"] < 200]  # less than 500ml of blood loss
+# perso_data = perso_data[perso_data["intraop_crystalloid"] < 100]  # less than 500ml of blood loss
+
+
+print(f"Number of cases with less than 200ml of blood loss: {len(perso_data)}")
+
 # Select cases without bolus drugs impacting BIS and MAP
 perso_data = perso_data[perso_data["intraop_ppf"] == 0]
 # perso_data = perso_data[perso_data["intraop_mdz"] == 0]
@@ -178,7 +184,7 @@ for caseid in perso_data["caseid"].astype(int):
 print(f"Number of cases with more than 2 drugs: {number_of_cases_with_more_drugs}")
 print(f"Number of cases with gazes: {number_of_cases_with_gazes}")
 print(f"Number of cases with missing volume: {number_of_cases_with_missing_volume}")
-print(f"Number of cases with missing data_nearop_start: {number_of_cases_with_pb_opstart}")
+print(f"Number of cases with missing op_start: {number_of_cases_with_pb_opstart}")
 print(f"Number of cases with good signal quality: {len(final_caseid_list)}")
 
 perso_data = perso_data[perso_data["caseid"].astype(int).isin(final_caseid_list)]
