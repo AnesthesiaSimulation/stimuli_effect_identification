@@ -217,63 +217,6 @@ for caseid, Patient_df in cases.groupby('caseid'):
     Patient_df.insert(len(Patient_df.columns), "map_base", map_base)
     Patient_df.insert(len(Patient_df.columns), "sv_base", sv_base)
 
-    # Use the Python Anesthesia Simulator (PAS) to simulate the pharmacokinetics of propofol and remifentanil
-    model = "Eleveld"  # Eleveld model
-    Patient_simu = pas.Patient(
-        [age, height, weight, sex],
-        model_propo=model,  # "Schnider",
-        model_remi=model,  # "Minto",
-        model_bis='Fuentes',
-        map_base=map_base,
-        hr_base=hr_base,
-        co_base=hr_base*sv_base / 1000,
-    )
-
-    # Patient_simu.hemo_pd.ltde_sv = 0
-    # Patient_simu.hemo_pd.sv_base = sv_base
-
-    # Patient_simu.hemo_pd.tpr_base = map_base / (hr_base * sv_base)
-    # Patient_simu.hemo_pd.k_in_tpr = Patient_simu.hemo_pd.k_out * Patient_simu.hemo_pd.tpr_base
-    # Patient_simu.hemo_pd.k_in_sv = Patient_simu.hemo_pd.k_out * sv_base
-    # Patient_simu.hemo_pd.x = np.array([
-    #     Patient_simu.hemo_pd.tpr_base,
-    #     Patient_simu.hemo_pd.sv_base,
-    #     Patient_simu.hemo_pd.hr_base,
-    #     Patient_simu.hemo_pd.sv_base * Patient_simu.hemo_pd.ltde_sv,
-    #     Patient_simu.hemo_pd.hr_base * Patient_simu.hemo_pd.ltde_hr,
-    # ])
-
-    Patient_df.insert(len(Patient_df.columns), "lbm", Patient_simu.lbm)
-    df_simu = Patient_simu.full_sim(u_propo=Patient_df['Propofol']*20/3600,
-                                    u_remi=Patient_df['Remifentanil']*20/3600)
-
-    Patient_df["HR_sim"] = df_simu['HR']
-    Patient_df["MAP_sim"] = df_simu['MAP']
-    Patient_df["DAP_sim"] = df_simu['DAP']
-    Patient_df["SAP_sim"] = df_simu['SAP']
-    Patient_df["BIS_sim"] = df_simu['BIS']
-    Patient_df["SV_sim"] = df_simu['SV']
-    Patient_df["Ce_prop"] = df_simu['x_propo_4']
-    Patient_df["Ce_remi"] = df_simu['x_remi_4']
-    Patient_df["TOL_sim"] = df_simu['TOL']
-
-    if False:
-        plt.plot(Patient_df['Time'], Patient_df['RR'].ffill(), label='BIS')
-        plt.vlines(intubation_time, 5, 50, 'g')
-        plt.show()
-
-        plt.plot(Patient_df['Time'], Patient_df['BIS'], label='BIS')
-        plt.plot(Patient_df['Time'], Patient_df['MAP'], label='MAP')
-        plt.plot(Patient_df['Time'], df_simu['BIS'], label='BIS sim')
-        plt.plot(Patient_df['Time'], df_simu['MAP'], label='MAP sim')
-        plt.vlines(opstart, 50, 150, 'r')
-        plt.vlines(intubation_time, 50, 150, 'g')
-
-        plt.legend()
-        plt.grid()
-        plt.title(f"caseid: {caseid}")
-        plt.show()
-
     Full_data = pd.concat([Full_data, Patient_df], ignore_index=True)
 
 
