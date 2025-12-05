@@ -1,1 +1,0 @@
-from .full_process import full_identification_process
