@@ -19,11 +19,11 @@ perso_data = perso_data[perso_data["caseend"] >= 90*60]
 
 print(f"Number of cases with at least 1 hours and 30 minutes of data: {len(perso_data)}")
 
-perso_data = perso_data[perso_data["intraop_ebl"] < 200]  # less than 500ml of blood loss
+perso_data = perso_data[perso_data["intraop_ebl"] < 500]  # less than 500ml of blood loss
 # perso_data = perso_data[perso_data["intraop_crystalloid"] < 100]  # less than 500ml of blood loss
 
 
-print(f"Number of cases with less than 200ml of blood loss: {len(perso_data)}")
+print(f"Number of cases with less than 500ml of blood loss: {len(perso_data)}")
 
 # Select cases without bolus drugs impacting BIS and MAP
 perso_data = perso_data[perso_data["intraop_ppf"] == 0]

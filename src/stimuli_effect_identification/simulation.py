@@ -107,9 +107,9 @@ def dataset_simulation(
         model_propo: str = 'Eleveld',
         model_remi: str = 'Eleveld',
         model_bis: str = 'Bouillon',
-        dist_profil: str = 'VitalDB',
         param_dist: dict = None,
         param_hemo: dict = None,
+        dist_profil: str = 'VitalDB',
         time_max_strat: str = None,
         bar: bool = False
 ) -> pd.DataFrame:
@@ -140,6 +140,7 @@ def dataset_simulation(
     pd.DataFrame
         Output dataframe including all the simulation results for each patients.
     """
+    print(dist_profil)
     if time_max_strat is None:
         args_list = [
             (
@@ -167,6 +168,7 @@ def dataset_simulation(
                 model_bis,
                 param_dist,
                 param_hemo,
+                dist_profil,
                 data_case.surgery_time.iloc[0] - 5*60
             )
             for caseid, data_case in df.groupby('caseid')
