@@ -36,6 +36,35 @@ def loss_function(df_simu, df_measure):
     return loss
 
 
+def optuna_obj_recalibration(
+        trial,
+        df_measure,
+        sampling_time,
+        model_propo,
+        model_remi,
+        model_bis,
+):
+    int_hr = trial.suggest_float("int_hr", -0.119*5, -0.119/22, log=False)
+    emax_propo_tpr = trial.suggest_float("emax_propo_tpr", -0.778*5, -1e-3, log=False)
+    fb = trial.suggest_float("fb", -0.661*5, -0.661/5, log=False)
+
+    param_hemo = {
+        'int_hr': int_hr,
+        'fb': fb,
+        'emax_propo_tpr': emax_propo_tpr,
+    }
+
+    result_df = dataset_simulation(
+        df=df_measure,
+        sampling_time=sampling_time,
+        model_propo=model_propo,
+        model_remi=model_remi,
+        model_bis=model_bis,
+        param_hemo=param_hemo,
+    )
+    loss = loss_function(result_df, df_measure)
+    return loss
+
 def optuna_obj_intubation(
         trial,
         df_measure,
@@ -143,6 +172,39 @@ def identify_intubation(
     best_params = pd.DataFrame(study.best_params, index=[0])
     best_params.to_csv('data/best_params_step_1.csv', index=False)
     return study.best_params
+
+def identify_hemo_only(
+        df_measure,
+        sampling_time: float = 1,
+        model_propo: str = 'Eleveld',
+        model_remi: str = 'Eleveld',
+        model_bis: str = 'Bouillon',
+        study_name: str = None,
+        first_guess: dict = None,
+        n_trials: int = 200,
+) -> dict:
+    data_path = Path('./data/')
+    if not data_path.exists():
+        data_path.mkdir()
+
+    study = optuna.create_study(direction='minimize', study_name=study_name,
+                                storage='sqlite:///./data/optimization.db', load_if_exists=True)
+    if first_guess is not None:
+        study.enqueue_trial(first_guess)
+    args = (
+        df_measure,
+        sampling_time,
+        model_propo,
+        model_remi,
+        model_bis,
+    )
+    study.optimize(lambda trial: optuna_obj_recalibration(trial, *args), n_trials=n_trials, show_progress_bar=True, )
+    print(study.best_params)
+
+    best_params = pd.DataFrame(study.best_params, index=[0])
+    best_params.to_csv('data/best_params_recab_only.csv', index=False)
+    return study.best_params
+
 
 
 def identify_surgery(
