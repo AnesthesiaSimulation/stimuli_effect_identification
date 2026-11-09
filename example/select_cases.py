@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 import vitaldb
 from pathlib import Path
 
-if not Path('data').exists():
-    Path('data').mkdir()
+if not Path('data/figures').exists():
+    Path('data/figures').mkdir()
 
 
 perso_data = pd.read_csv("https://api.vitaldb.net/cases", decimal='.')

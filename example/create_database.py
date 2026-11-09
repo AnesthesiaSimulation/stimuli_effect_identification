@@ -21,7 +21,9 @@ except ImportError:
     def load_cases(track_names: list, caseids: list):
         """Import a list of cases from vitaldb in a dataframe format."""
         dataframe_final = pd.DataFrame()
+        bar = tqdm(len(caseids))
         for caseid in caseids:
+            bar.update()
             cases = vdb.VitalFile(caseid, track_names)
             dataframe_temp = cases.to_pandas(track_names, 1)
             dataframe_temp.insert(0, 'caseid', caseid)
@@ -54,7 +56,8 @@ cases = load_cases(['BIS/BIS', 'BIS/SQI', 'Orchestra/PPF20_RATE', 'Orchestra/RFT
                     'Solar8000/ART_MBP', 'Solar8000/ART_SBP', 'Solar8000/ART_DBP',
                     'Solar8000/NIBP_MBP', 'Solar8000/NIBP_SBP', 'Solar8000/NIBP_DBP',
                     'Solar8000/PLETH_HR', 'Orchestra/RFTN20_VOL', 'Orchestra/PPF20_VOL',
-                    'Solar8000/RR_CO2',
+                    'Orchestra/RFTN20_CE', 'Orchestra/PPF20_CE', 'Orchestra/RFTN20_CP',
+                    'Orchestra/PPF20_CP', 'Solar8000/RR_CO2',
                     ], caseids=caselist)  # load the case from vitalDB
 
 cases.rename(columns={'BIS/BIS': 'BIS',
@@ -67,6 +70,10 @@ cases.rename(columns={'BIS/BIS': 'BIS',
                       'Solar8000/PLETH_HR': "HR",
                       'Orchestra/RFTN20_VOL': 'Vol_Rem',
                       'Orchestra/PPF20_VOL': 'Vol_Prop',
+                      'Orchestra/RFTN20_CE': 'Ce_Remi',
+                      'Orchestra/PPF20_CE': 'Ce_Prop',
+                      'Orchestra/RFTN20_CP': 'Cp_Remi',
+                      'Orchestra/PPF20_CP': 'Cp_Prop',
                       'Solar8000/NIBP_MBP': 'NI_MAP',
                       'Solar8000/NIBP_SBP': 'NI_SAP',
                       'Solar8000/NIBP_DBP': 'NI_DAP',

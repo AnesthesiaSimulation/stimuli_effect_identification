@@ -22,4 +22,4 @@ data_measure.loc[
 ] = 'train'
 
 
-# data_measure.to_csv('data/database.csv')
+data_measure.to_csv('data/database.csv')
