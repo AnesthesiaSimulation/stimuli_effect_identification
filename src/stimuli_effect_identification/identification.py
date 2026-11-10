@@ -61,6 +61,7 @@ def optuna_obj_recalibration(
         model_remi=model_remi,
         model_bis=model_bis,
         param_hemo=param_hemo,
+        dist_profil=None,
     )
     loss = loss_function(result_df, df_measure)
     return loss

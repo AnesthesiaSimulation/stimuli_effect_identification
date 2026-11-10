@@ -34,6 +34,7 @@ df_simulated_train = dataset_simulation(
     model_remi = 'Eleveld',
     model_bis = 'Bouillon',
     param_hemo = param_hemo_out,
+    dist_profil=None,
     bar=True,
 )
 
@@ -51,6 +52,7 @@ df_simulated_test = dataset_simulation(
     model_remi = 'Eleveld',
     model_bis = 'Bouillon',
     param_hemo = param_hemo_out,
+    dist_profil=None,
     bar=True,
 )
 
